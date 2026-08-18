@@ -75,11 +75,18 @@ python webapp.py ./semicon_new/Test_NoisyLR/NoisyLR ./output_webapp_restored
 ---
 
 ### 4️⃣ Step 4: Reproduce Model Training (`train.py`)
-To reproduce model training from scratch:
+To reproduce model training from scratch, pass the directory containing your training dataset:
 
 ```bash
-python train.py --num-blocks 20 --model-path best_model_v2_blocks20.pth
+python train.py --train-dir <train-dataset-dir> --num-blocks 20 --model-path best_model_v2_blocks20.pth
 ```
+<train-dataset-dir> should contain GT and NoisyLR folders
+
+Example:
+```bash
+python train.py --train-dir ./semicon_new/train/train --num-blocks 20 --model-path best_model_v2_blocks20.pth
+```
+
 This runs 120 epochs with Charbonnier + SSIM loss, EMA model averaging, CosineAnnealing LR schedule, and spatial data augmentations (flips + rotations).
 
 ---

@@ -14,16 +14,96 @@ from losses import ssim
 from model import RestorationNetV2
 
 
-DATASET = "semicon_new"
-GT_DIR = os.path.join(DATASET, "train", "train", "GT")
-NOISY_DIR = os.path.join(DATASET, "train", "train", "NoisyLR")
-SPLIT_FILE = "split.json"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LEGACY_DATASET = os.path.join(SCRIPT_DIR, "semicon_new")
+DEFAULT_TRAIN_DIR = os.path.join(LEGACY_DATASET, "train", "train")
+SPLIT_FILE = os.path.join(SCRIPT_DIR, "split.json")
+
+
+def resolve_train_dir(train_dir=None):
+    candidates = []
+
+    if train_dir:
+        candidates.append(os.path.abspath(train_dir))
+        candidates.append(os.path.join(os.path.abspath(train_dir), "train"))
+        candidates.append(os.path.join(os.path.abspath(train_dir), "train", "train"))
+
+    candidates.extend(
+        [
+            DEFAULT_TRAIN_DIR,
+            os.path.join(SCRIPT_DIR, "semicon_new"),
+            os.path.join(SCRIPT_DIR, "train"),
+            os.path.abspath("semicon_new/train/train"),
+            os.path.abspath("semicon_new"),
+        ]
+    )
+
+    seen = set()
+    for path in candidates:
+        norm = os.path.normpath(path)
+        if norm not in seen:
+            seen.add(norm)
+            if os.path.isdir(norm):
+                return norm
+
+    return os.path.abspath(DEFAULT_TRAIN_DIR if train_dir is None else train_dir)
+
+
+def resolve_dataset_dirs(train_dir=None):
+    root = resolve_train_dir(train_dir)
+    gt_candidates = [
+        os.path.join(root, "GT"),
+        os.path.join(root, "train", "GT"),
+        os.path.join(root, "train", "train", "GT"),
+    ]
+    noisy_candidates = [
+        os.path.join(root, "NoisyLR"),
+        os.path.join(root, "train", "NoisyLR"),
+        os.path.join(root, "train", "train", "NoisyLR"),
+    ]
+
+    for gt_dir, noisy_dir in zip(gt_candidates, noisy_candidates):
+        if os.path.isdir(gt_dir) and os.path.isdir(noisy_dir):
+            return gt_dir, noisy_dir
+
+    return gt_candidates[0], noisy_candidates[0]
+
+
+def resolve_split_file(train_dir=None):
+    candidate_paths = [
+        os.path.join(SCRIPT_DIR, "split.json"),
+        "split.json",
+    ]
+
+    for path in candidate_paths:
+        if os.path.exists(path):
+            return path
+
+    dataset_root = resolve_train_dir(train_dir)
+    train_gt_dir = os.path.join(dataset_root, "GT")
+    if not os.path.isdir(train_gt_dir):
+        train_gt_dir = os.path.join(dataset_root, "train", "GT")
+    if not os.path.isdir(train_gt_dir):
+        train_gt_dir = os.path.join(dataset_root, "train", "train", "GT")
+
+    if os.path.isdir(train_gt_dir):
+        filenames = sorted(
+            name for name in os.listdir(train_gt_dir) if name.lower().endswith(".npy")
+        )
+        if filenames:
+            split_data = {"train": filenames, "validation": []}
+            with open(candidate_paths[0], "w") as file:
+                json.dump(split_data, file)
+            return candidate_paths[0]
+
+    return candidate_paths[0]
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Retrain V2 with augmentation, EMA, and a smoother LR schedule."
     )
+    parser.add_argument("--train-dir", default=None, help="Directory containing GT and NoisyLR folders for training.")
     parser.add_argument("--epochs", type=int, default=120)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--lr", type=float, default=2e-4)
@@ -116,11 +196,30 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Device:", device)
 
-    with open(SPLIT_FILE, "r") as file:
+    train_dir = resolve_train_dir(args.train_dir)
+    GT_DIR, NOISY_DIR = resolve_dataset_dirs(args.train_dir)
+    print(f"Training directory: {train_dir}")
+    print(f"GT directory: {GT_DIR}")
+    print(f"Noisy directory: {NOISY_DIR}")
+
+    split_path = resolve_split_file(args.train_dir)
+    if not os.path.exists(split_path):
+        raise FileNotFoundError(
+            f"Missing split file: {split_path}. "
+            f"Expected dataset structure under {train_dir} or a valid split.json file."
+        )
+
+    with open(split_path, "r") as file:
         split_data = json.load(file)
 
-    train_files = split_data["train"]
-    val_files = split_data["validation"]
+    train_files = split_data.get("train", [])
+    val_files = split_data.get("validation", [])
+
+    if not train_files:
+        raise ValueError(
+            f"No training files found in {split_path}. "
+            f"Check that the dataset exists at {GT_DIR} and {NOISY_DIR}."
+        )
 
     if args.use_validation_for_training:
         train_files = train_files + val_files

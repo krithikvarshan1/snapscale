@@ -29,8 +29,8 @@ kla_submission/
 ### 1️⃣ Step 1: Environment Setup
 Clone the repository and install all required dependencies:
 ```bash
-git clone <your-repo-url>
-cd kla_submission
+git clone https://github.com/krithikvarshan1/snapscale.git
+cd snapscale
 pip install -r requirements.txt
 ```
 

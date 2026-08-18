@@ -1,0 +1,10 @@
+# KLA Degraded Image Restoration - Essential Dependencies
+torch>=2.0.0
+torchvision>=0.15.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+lpips>=0.1.4
+pillow>=9.5.0
+Flask>=3.0.0
+scipy>=1.10.0
+tqdm>=4.65.0
